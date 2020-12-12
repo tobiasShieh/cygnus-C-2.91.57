@@ -30,6 +30,8 @@
  *   You should not attempt to use it directly.
  */
 
+// 该文件是红黑树rb_tree的实现文件，是内部文件，程序员不会直接使用使用，但是除了hash_x等其它的关联容器都是以此
+// 作为底层实现的，也即是说这些关联式容器内部都维护了一个rb_tree，容器的所有操作都可以间接的调用rb_tree实现。
 #ifndef __SGI_STL_INTERNAL_TREE_H
 #define __SGI_STL_INTERNAL_TREE_H
 
@@ -60,26 +62,39 @@ iterators invalidated are those referring to the deleted node.
 
 __STL_BEGIN_NAMESPACE 
 
+// 红黑树由两种类型节点：红/黑，使用bool类型来表示两种类型的节点，0表示红，1表示黑
 typedef bool __rb_tree_color_type;
 const __rb_tree_color_type __rb_tree_red = false;
 const __rb_tree_color_type __rb_tree_black = true;
 
+/* 
+ * rb_tree中元素节点和迭代器都是两层结构的，这样做的好处是可以将结构与数据分离
+ */
+// 元素节点定义：基层节点
+//    由于不涉及存储数据，因此结构体定义不需要模板
 struct __rb_tree_node_base
 {
   typedef __rb_tree_color_type color_type;
+  // 为“指向基层节点的指针”重命名
   typedef __rb_tree_node_base* base_ptr;
 
+  // 节点颜色
   color_type color; 
+  // 父节点指针
   base_ptr parent;
+  // 左子树指针
   base_ptr left;
+  // 右子树指针
   base_ptr right;
 
+  // 计算以当前节点 x 为根节点的最左端节点（返回最小值节点指针）
   static base_ptr minimum(base_ptr x)
   {
     while (x->left != 0) x = x->left;
     return x;
   }
 
+  // 计算以当前节点 x 为根节点的最右端节点（返回最大值节点指针）
   static base_ptr maximum(base_ptr x)
   {
     while (x->right != 0) x = x->right;
@@ -87,78 +102,128 @@ struct __rb_tree_node_base
   }
 };
 
+// 元素节点定义：上层节点
+//    由于节点是通过 struct 实现的，默认 public 访问权限，因此父类可以直接访问子类属性
+//    模板参数 Value 用于表示需要存储的记录，而不是单指 key 或者 value，而是两者的集合
 template <class Value>
 struct __rb_tree_node : public __rb_tree_node_base
 {
+  // 为“指向上层节点的指针”重命名，通过此指针可以调用基层节点中提供的四个成员属性
   typedef __rb_tree_node<Value>* link_type;
+  // 保存数据记录
   Value value_field;
 };
 
 
+// 基层 iterator 定义
 struct __rb_tree_base_iterator
 {
   typedef __rb_tree_node_base::base_ptr base_ptr;
+  // 重命名迭代器类型，由此可以看出 rb_tree 的 iterator 为双向 iterator，不是随机的
   typedef bidirectional_iterator_tag iterator_category;
+  // 两个指针之间的 + - 运算后的结果就不再是一个指针了，而是一个“距离”概念，总要有一个类
+  // 型与之对应吧，为了规范和一致性（可移植），C++定义了ptrdiff_t。
+  // 在此处其实就是 int
   typedef ptrdiff_t difference_type;
+  // 用于保存当前 iterator 指向的节点的指针
   base_ptr node;
 
+  // 作用类似与 operator++()，其实就是 operator++() 的底层实现，其实就是将 node 变为下一个迭代器
+  //    需要注意的是该函数操作的是 node 成员属性本身
+  //    当遇到最后一个节点时，下一个节点为 header。
   void increment()
   {
-    if (node->right != 0) {
+    if (node->right != 0) { // 如果 node 有右子树，那么下一个元素必然是右子树的最小值
       node = node->right;
       while (node->left != 0)
         node = node->left;
     }
-    else {
+    else {  // 如果 node 没有右子树
+      // 如果 node 没有右子树，那么只能进行回溯（节点包含 parent 的作用，便于找到父节点），当 node 为父节点
+      // 的右子节点时，继续回溯，直到 node 不为父节点的右子节点为止（可能遇到正常的父节点、可能遇到header）。
       base_ptr y = node->parent;
       while (node == y->right) {
         node = y;
         y = y->parent;
       }
+      // 情况1：
+      //    遇到正常父节点 y，它的左子节点为 node，这样 y 即为 node 的下一个节点了，需要使用下边判断
+      // 情况2：
+      //    当 node 为 rb_tree 的最后一个节点，并且拥有右子树，按照道理 node 的下一个 iterator 位置应该
+      //    为 end，也就是 header。在回溯到最后时刻，node 指向 root，y 指向 header，显然下一个 iterator
+      //    应该为 y，因此需要使用下方判断
+      // 情况3：
+      //    当 node 为 rb_tree的最后一个节点，并且没有右子树，按照道理 node 的下一个 iterator 位置应该
+      //    为 end，也就是header。在回溯到最后时刻，node 指向 header，而 y 指向 root，显然下一个节点就
+      //    应该为 node，所以不会调用下方判断
+      // 总结：造成下方判断代码的组要原因就是使用了 header 节点小技巧，使得 header 与 root 互为 parent。
       if (node->right != y)
         node = y;
     }
   }
 
+  // 作用类似与 operator--()，其实就是 operator--() 的底层实现，其实就是将 node 变为上一个迭代器
   void decrement()
   {
     if (node->color == __rb_tree_red &&
-        node->parent->parent == node)
+        node->parent->parent == node) // 当对 header-- 时，就是得到该 rb_tree的最后一个节点，header为红的
       node = node->right;
-    else if (node->left != 0) {
+    else if (node->left != 0) { //当 node 左子树不为空
+      // node 左子树不为空，那么它的前一个节点就是当前左子树的最大值
       base_ptr y = node->left;
       while (y->right != 0)
         y = y->right;
       node = y;
     }
-    else {
+    else {  // node 左子树为空
+      // 如果 node 的左子树为空，那么就只能向上回溯。回溯过程为，当 node 的父节点的左子节点为 node 时，继续
+      // 回溯，直到碰到父节点的右子节点为 node 为止，此时的 y 就是 node 的上一个节点了。
       base_ptr y = node->parent;
       while (node == y->left) {
         node = y;
         y = y->parent;
       }
       node = y;
+      // 当对第一个元素进行 -- 结果如何呢？？？？
+      // TODO...
     }
   }
 };
 
+// 上层 iterator 定义
+//    模板参数 Value 为实值类型，该类型不用定义为 const，而是在内部进行设置
+//    终于发现为什么要同时提供 Value Ref Ptr 三个参数了！！！主要就是为了实现 iterator 和 const_iterator，
+//    因为对于不同的 iterator 我们一般会有不同的处理方法，对于 const_iterator 我们希望不要修改指向的元素内
+//    容。我们可以通过 Ref Ptr 两个参数来接收 const 或者 非 const 数据类型，通过此数据类型参数，我们可以使
+//    此类型作为某些函数的返回值类型，从而实现我们的需求。关键点 Ref Ptr reference pointer operator*()
+//                 
 template <class Value, class Ref, class Ptr>
 struct __rb_tree_iterator : public __rb_tree_base_iterator
 {
+  // 重命名记录类型
   typedef Value value_type;
+  // 重命名记录引用
   typedef Ref reference;
+  // 重命名记录指针
   typedef Ptr pointer;
+  // 重命名上层迭代器，模板 Ref、Ptr 未设置为 const，主要是为了对 data 进行修改，而不修改 key
+  // 对于 map 容器，包含了此迭代器
   typedef __rb_tree_iterator<Value, Value&, Value*>             iterator;
+  // 重命名上层迭代器，模板 Ref、Ptr 设置为 const，主要是为了防止修改，主要应用于 set，因为 set 的 key 就是
+  // value，value 就是 key 
   typedef __rb_tree_iterator<Value, const Value&, const Value*> const_iterator;
   typedef __rb_tree_iterator<Value, Ref, Ptr>                   self;
+  // 重命名指向上层节点指针
   typedef __rb_tree_node<Value>* link_type;
 
   __rb_tree_iterator() {}
   __rb_tree_iterator(link_type x) { node = x; }
   __rb_tree_iterator(const iterator& it) { node = it.node; }
-
+  
+  // 获取 iterator 指向节点数据的引用，使用 iterator 将返回非 const，使用 const_iterator 将返回 const
   reference operator*() const { return link_type(node)->value_field; }
 #ifndef __SGI_STL_NO_ARROW_OPERATOR
+  // 重载operator->的标准写法，返回指向数据的指针即可，编译器会自动帮我们添加->，使得满足语法限制
   pointer operator->() const { return &(operator*()); }
 #endif /* __SGI_STL_NO_ARROW_OPERATOR */
 
@@ -206,25 +271,40 @@ inline Value* value_type(const __rb_tree_iterator<Value, Ref, Ptr>&) {
 
 #endif /* __STL_CLASS_PARTIAL_SPECIALIZATION */
 
+// 此函数为 rb_tree 调整函数，向左旋转
+//    1）参数 x 为需要旋转的顶部节点
+//    2）参数 root 为根节点的引用，主要是为了当以 root 作为旋转节点时需要对 header 的 parent 进行修改
+//    3）在旋转的时并不涉及颜色的变化，只有指针的移动
+//    4）需要传递 root 的主要原因是为了区分情况1和情况2、3，当父节点为 header 时候，无法判断节点 x 为 header
+//    的左子节点还是右子节点
+//    5）特别需要注意的时，旋转并不会改变节点的顺序，因此 header 节点的 left 和 right 都不会发生变化
 inline void 
 __rb_tree_rotate_left(__rb_tree_node_base* x, __rb_tree_node_base*& root)
 {
+  // 三种旋转类型：
+  // 第一种：x 的父节点为 header
+  // 第二种：x 为 x 的父节点的左子节点
+  // 第三种：x 为 x 的父节点的右子节点 
   __rb_tree_node_base* y = x->right;
   x->right = y->left;
   if (y->left !=0)
     y->left->parent = x;
-  y->parent = x->parent;
+  y->parent = x->parent;  
 
-  if (x == root)
+  // 针对不同的情况进行设置
+  if (x == root)  // 情况1
     root = y;
-  else if (x == x->parent->left)
+    // x->parent->parent = y;
+  else if (x == x->parent->left)  // 情况2
     x->parent->left = y;
-  else
+  else  // 情况3
     x->parent->right = y;
   y->left = x;
   x->parent = y;
 }
 
+// 此函数为 rb_tree 调整函数，向右旋转
+//    1）和向左旋转类似，也有三种情况，当旋转点 x 的父节点为 header 时，需要特别处理
 inline void 
 __rb_tree_rotate_right(__rb_tree_node_base* x, __rb_tree_node_base*& root)
 {
@@ -415,6 +495,12 @@ __rb_tree_rebalance_for_erase(__rb_tree_node_base* z,
   return y;
 }
 
+// 模板参数：
+// Key：键值类型
+// Value：实值类型，注意这里表示的时 Key 和 data 的组合，而不指 data
+// KeyOfValue：如何从 Value 中提取 Key，为一个仿函数
+// Compare：如何比较键值，为一个仿函数
+// Alloc：分配器
 template <class Key, class Value, class KeyOfValue, class Compare,
           class Alloc = alloc>
 class rb_tree {
@@ -422,6 +508,7 @@ protected:
   typedef void* void_pointer;
   typedef __rb_tree_node_base* base_ptr;
   typedef __rb_tree_node<Value> rb_tree_node;
+  // 专门为 rb_tree_node 分配的 allocator
   typedef simple_alloc<rb_tree_node, Alloc> rb_tree_node_allocator;
   typedef __rb_tree_color_type color_type;
 public:
@@ -553,8 +640,10 @@ public:
 public:    
                                 // accessors:
   Compare key_comp() const { return key_compare; }
+  // 1. 返回 begin，就是返回 header 节点的最左边一个元素节点的迭代器
   iterator begin() { return leftmost(); }
   const_iterator begin() const { return leftmost(); }
+  // 1. 返回 end，就是返回 header 节点
   iterator end() { return header; }
   const_iterator end() const { return header; }
   reverse_iterator rbegin() { return reverse_iterator(end()); }

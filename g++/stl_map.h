@@ -50,6 +50,8 @@ public:
   typedef Key key_type;
   typedef T data_type;
   typedef T mapped_type;
+  // 1. 再这里直接将 key 和 data 组合为一个 pair，并将 key 设置为 const
+  // 2. 其实这里的 T 类型和 rb_tree 底层节点的数据类型相同
   typedef pair<const Key, T> value_type;
   typedef Compare key_compare;
     
@@ -66,6 +68,7 @@ public:
   };
 
 private:
+  // 1. 其中 select1st 就是获取 pair 的第一个元素
   typedef rb_tree<key_type, value_type, 
                   select1st<value_type>, key_compare, Alloc> rep_type;
   rep_type t;  // red-black tree representing map

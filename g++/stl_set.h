@@ -37,6 +37,8 @@ __STL_BEGIN_NAMESPACE
 #pragma set woff 1174
 #endif
 
+// 1. set 容器模板参数只需要提供一个 key 类型即可，因为 key 就是 data，data 就是 key
+// 2. set 默认使用的时 less 仿函数，此仿函数就是重载了 operator()，两个参数 x < y
 #ifndef __STL_LIMITED_DEFAULT_TEMPLATES
 template <class Key, class Compare = less<Key>, class Alloc = alloc>
 #else
@@ -45,16 +47,23 @@ template <class Key, class Compare, class Alloc = alloc>
 class set {
 public:
   // typedefs:
-
+  // 1. 由此可以看到 set 集合内部 key 和 value 是一致的
   typedef Key key_type;
   typedef Key value_type;
   typedef Compare key_compare;
   typedef Compare value_compare;
 private:
+  // 1. 此处使用的 key 提取仿函数其实就是返回 key 本身
   typedef rb_tree<key_type, value_type, 
                   identity<value_type>, key_compare, Alloc> rep_type;
+  // 2. 由此可以看出 set 容器的内部其实就是一个 rb_tree，使用 identity 作为 key 提取仿函数，用户可以自己设置
+  // 比较方法，默认为 less
   rep_type t;  // red-black tree representing set
 public:
+  // 1. 由此可以看出 set 容器中的指针和迭代器都是 const 类型的，因为 set 中的元素就是键值，不能发生修改操作。
+  // 2. 需要注意的是 const iterator 并不是迭代器对象是一个 const 类型的，iterator 的 const 是如何起作用的
+  // 呢？其实 iterator 本身就是一个模板，其中有模板参数用来设置所指向内容的类型、指针类型和引用类型等，通过对
+  // 模板参数类型进行 const 化设计，就可以使得 iterator 具有 const 属性
   typedef typename rep_type::const_pointer pointer;
   typedef typename rep_type::const_pointer const_pointer;
   typedef typename rep_type::const_reference reference;
@@ -73,6 +82,7 @@ public:
 
 #ifdef __STL_MEMBER_TEMPLATES
   template <class InputIterator>
+  // 1. 该构造函数以 first 与 last 之间作为元素创建 set 容器，并使用默认比较方法 less
   set(InputIterator first, InputIterator last)
     : t(Compare()) { t.insert_unique(first, last); }
 
@@ -110,6 +120,7 @@ public:
   size_type max_size() const { return t.max_size(); }
   void swap(set<Key, Compare, Alloc>& x) { t.swap(x.t); }
 
+  // 1. set 的插入操作就是调用 rb_tree 的 insert_unique 操作，只能插入不同的实值
   // insert/erase
   typedef  pair<iterator, bool> pair_iterator_bool; 
   pair<iterator,bool> insert(const value_type& x) { 
