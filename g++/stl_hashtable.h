@@ -46,11 +46,12 @@
 
 __STL_BEGIN_NAMESPACE
 
+// 1. hashtable 中的元素结构定义，模板参数 Value 为数据包类型，(key|value)，可以只包含 key
 template <class Value>
 struct __hashtable_node
 {
-  __hashtable_node* next;
-  Value val;
+  __hashtable_node* next; // 定义指向下一个节点的指针
+  Value val;  // 数据包
 };  
 
 template <class Value, class Key, class HashFcn,
@@ -65,6 +66,7 @@ template <class Value, class Key, class HashFcn,
           class ExtractKey, class EqualKey, class Alloc>
 struct __hashtable_const_iterator;
 
+// 1. hashtable 的普通 iterator 定义，模板参数和定义 hashtable 相同
 template <class Value, class Key, class HashFcn,
           class ExtractKey, class EqualKey, class Alloc>
 struct __hashtable_iterator {
@@ -85,11 +87,14 @@ struct __hashtable_iterator {
   typedef Value& reference;
   typedef Value* pointer;
 
+  // 1. 维护一个用于指向元素节点的指针
   node* cur;
+  // 2. 维护一个指向 hashtable 的指针
   hashtable* ht;
 
   __hashtable_iterator(node* n, hashtable* tab) : cur(n), ht(tab) {}
   __hashtable_iterator() {}
+  // 1. 通过 node* 获取数据包
   reference operator*() const { return cur->val; }
 #ifndef __SGI_STL_NO_ARROW_OPERATOR
   pointer operator->() const { return &(operator*()); }
@@ -138,6 +143,8 @@ struct __hashtable_const_iterator {
   bool operator!=(const const_iterator& it) const { return cur != it.cur; }
 };
 
+// 1. 下方数组提供的是篮子大小，一般情况下选择质数作为篮子大小，通过两倍扩充，扩充之后选择距离最近的
+// 质数，当然篮子大小不会再编译阶段在算，而是直接被固定，可以直接使用
 // Note: assumes long is at least 32 bits.
 static const int __stl_num_primes = 28;
 static const unsigned long __stl_prime_list[__stl_num_primes] =
@@ -158,7 +165,13 @@ inline unsigned long __stl_next_prime(unsigned long n)
   return pos == last ? *(last - 1) : *pos;
 }
 
-
+// 1. hashtable 模板参数定义
+//      Value：数据包类型，包含 key 和 data
+//      Key：键值类型
+//      HashFcn：hash function 仿函数
+//      ExtracttKey：从数据包中提取 key 的仿函数
+//      EqualKey：判断两个 key 是否相同的仿函数
+//      Alloc：空间置配器
 template <class Value, class Key, class HashFcn,
           class ExtractKey, class EqualKey,
           class Alloc>
@@ -176,18 +189,26 @@ public:
   typedef value_type&       reference;
   typedef const value_type& const_reference;
 
+  // 1. 获取 hash function 仿函数对象
   hasher hash_funct() const { return hash; }
+  // 1. 获取 key 比较仿函数对象
   key_equal key_eq() const { return equals; }
 
 private:
+  // 1. 维护一个 hash function 仿函数对象
   hasher hash;
+  // 1. 维护一个 key 比较仿函数对象
   key_equal equals;
+  // 1. 维护一个 获取 key 仿函数对象
   ExtractKey get_key;
 
   typedef __hashtable_node<Value> node;
+  // 1. 设计一个专门用于分配 hashtable 节点的空间置配器
   typedef simple_alloc<node, Alloc> node_allocator;
 
+  // 1. 篮子，每个元素保存的是一个 node*，维护了一个单链表，当然也可以使用其他实现方法
   vector<node*,Alloc> buckets;
+  // 1. 元素数量
   size_type num_elements;
 
 public:
@@ -498,6 +519,7 @@ private:
 
 };
 
+// 1. 迭代器的 ++ 操作
 template <class V, class K, class HF, class ExK, class EqK, class A>
 __hashtable_iterator<V, K, HF, ExK, EqK, A>&
 __hashtable_iterator<V, K, HF, ExK, EqK, A>::operator++()
