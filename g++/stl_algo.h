@@ -73,13 +73,6 @@ inline const T& __median(const T& a, const T& b, const T& c, Compare comp) {
     return b;
 }
 
-template <class InputIterator, class Function>
-Function for_each(InputIterator first, InputIterator last, Function f) {
-  for ( ; first != last; ++first)
-    f(*first);
-  return f;
-}
-
 template <class InputIterator, class T>
 InputIterator find(InputIterator first, InputIterator last, const T& value) {
   while (first != last && *first != value) ++first;
@@ -1403,6 +1396,8 @@ inline void nth_element(RandomAccessIterator first, RandomAccessIterator nth,
   __nth_element(first, nth, last, value_type(first), comp);
 }
 
+
+// low_bound start
 template <class ForwardIterator, class T, class Distance>
 ForwardIterator __lower_bound(ForwardIterator first, ForwardIterator last,
                               const T& value, Distance*,
@@ -1426,28 +1421,49 @@ ForwardIterator __lower_bound(ForwardIterator first, ForwardIterator last,
   }
   return first;
 }
-
 template <class RandomAccessIterator, class T, class Distance>
 RandomAccessIterator __lower_bound(RandomAccessIterator first,
                                    RandomAccessIterator last, const T& value,
                                    Distance*, random_access_iterator_tag) {
+  // 二分法查找元素是否存在，如果存在，则返回第一个出现该元素的位置，否则返回第一个大于该元素的位置
+
+  // 获取元素个数
   Distance len = last - first;
   Distance half;
   RandomAccessIterator middle;
 
   while (len > 0) {
     half = len >> 1;
+    // middle 为中间迭代器，如果为奇数个元素，则 middle 为最中间元素，如果为偶数个，则 middle 为中间靠右一个
     middle = first + half;
     if (*middle < value) {
+      // 中间元素大小比 value 小，则范围向右缩减
+
+      // 更新 first 为 middle 之后的一个元素
       first = middle + 1;
       len = len - half - 1;
     }
     else
+      // 当 middle 所指元素大于等于 value
       len = half;
   }
   return first;
+  /*
+    int start = 0, end = last - first - 1;
+    int mid = 0;
+    while (start < end)
+    {
+      mid = (start + end) >> 1;
+      if (*(first + mid) < value)
+        start = mid + 1;
+      else
+        end = mid - 1;
+    }
+    return first + start;
+  */
 }
 
+/* lower_bound 版本一：operator< */
 template <class ForwardIterator, class T>
 inline ForwardIterator lower_bound(ForwardIterator first, ForwardIterator last,
                                    const T& value) {
@@ -1612,6 +1628,7 @@ inline ForwardIterator upper_bound(ForwardIterator first, ForwardIterator last,
   return __upper_bound(first, last, value, comp, distance_type(first),
                        iterator_category(first));
 }
+// upper_bound finish
 
 template <class ForwardIterator, class T, class Distance>
 pair<ForwardIterator, ForwardIterator>

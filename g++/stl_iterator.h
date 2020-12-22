@@ -225,6 +225,7 @@ inline ptrdiff_t* distance_type(const T*) { return (ptrdiff_t*)(0); }
 
 #endif /* __STL_CLASS_PARTIAL_SPECIALIZATION */
 
+// distance start
 template <class InputIterator, class Distance>
 inline void __distance(InputIterator first, InputIterator last, Distance& n, 
                        input_iterator_tag) {
@@ -237,10 +238,12 @@ inline void __distance(RandomAccessIterator first, RandomAccessIterator last,
   n += last - first;
 }
 
+/* 两个迭代器距离，根据不同的迭代器有不同的处理方法 */
 template <class InputIterator, class Distance>
 inline void distance(InputIterator first, InputIterator last, Distance& n) {
   __distance(first, last, n, iterator_category(first));
 }
+// distance finish
 
 #ifdef __STL_CLASS_PARTIAL_SPECIALIZATION
 

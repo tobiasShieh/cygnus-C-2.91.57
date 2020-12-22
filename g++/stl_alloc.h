@@ -131,6 +131,7 @@ __STL_BEGIN_NAMESPACE
 # endif
 #endif
 
+/* 第一级空间配置器 */
 template <int inst>
 class __malloc_alloc_template {
 
@@ -414,7 +415,7 @@ public:
 
   /* p may not be 0 */
   static void deallocate(void *p, size_t n)
-  {
+  {Z
     obj *q = (obj *)p;
     obj * __VOLATILE * my_free_list;
 

@@ -355,6 +355,7 @@ void vector<T, Alloc>::insert_aux(iterator position, const T& x) {
   }
 }
 
+/* 在 position 中插入 n 个 x */
 template <class T, class Alloc>
 void vector<T, Alloc>::insert(iterator position, size_type n, const T& x) {
   if (n != 0) {

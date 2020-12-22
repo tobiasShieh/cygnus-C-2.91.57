@@ -33,6 +33,10 @@
 
 // Hashtable class, used to implement the hashed associative containers
 // hash_set, hash_map, hash_multiset, and hash_multimap.
+/* Hashtable 类，被用于实现无序的关联式容器，比如：hash_set hash_map hash_multiset hash_multimap */
+// 1. hashtable 在处理冲突的时候采用的是“开链”法；
+// 2. 使用 vector 来维护一个“篮子”，每个篮子维护了一个元素 list，每一个 list 中的元素拥有相同的 hash 值。
+// 3. vector 的大小必须大于当前容器中元素的个数，否则需要重新分配更大的 vector。
 
 #include <stl_algobase.h>
 #include <stl_alloc.h>
@@ -46,14 +50,18 @@
 
 __STL_BEGIN_NAMESPACE
 
-// 1. hashtable 中的元素结构定义，模板参数 Value 为数据包类型，(key|value)，可以只包含 key
+/* hashtable 中元素节点定义 */
+// 1. 模板参数 Value 为数据包类型，由 key 和 data 组成，比如：map；同样也可以只包含 key，比如：set
 template <class Value>
 struct __hashtable_node
 {
-  __hashtable_node* next; // 定义指向下一个节点的指针
-  Value val;  // 数据包
+  // 定义指向下一个节点的指针
+  __hashtable_node* next;
+  // 数据包 
+  Value val;  
 };  
 
+/* 文件中所定义的类的声明，包括 hashtable __hashtable_iterator __hashtable_const_iterator */
 template <class Value, class Key, class HashFcn,
           class ExtractKey, class EqualKey, class Alloc = alloc>
 class hashtable;
@@ -66,7 +74,9 @@ template <class Value, class Key, class HashFcn,
           class ExtractKey, class EqualKey, class Alloc>
 struct __hashtable_const_iterator;
 
-// 1. hashtable 的普通 iterator 定义，模板参数和定义 hashtable 相同
+/* iterator 定义 */
+// 1. 模板参数含义：Value 代表数据类型；Key 代表键值类型；HashFcn 为仿函数，用于计算元素哈希值；ExtractKey
+// 用与从 Value 中提取键值；EqualKey 仿函数用于判断两个键值是否相同；Alloc 为空间配置器；
 template <class Value, class Key, class HashFcn,
           class ExtractKey, class EqualKey, class Alloc>
 struct __hashtable_iterator {
@@ -80,38 +90,50 @@ struct __hashtable_iterator {
           const_iterator;
   typedef __hashtable_node<Value> node;
 
+  /* 一些 iterator 必要的 typedef */
+  // 迭代器类型为 向前迭代器，即只能 ++， 不能 --
   typedef forward_iterator_tag iterator_category;
+  // 元素类型，(key|data)
   typedef Value value_type;
+  // 迭代器距离类型
   typedef ptrdiff_t difference_type;
   typedef size_t size_type;
+  // 引用类型
   typedef Value& reference;
+  // 指针类型
   typedef Value* pointer;
 
-  // 1. 维护一个用于指向元素节点的指针
+  // 指向当前节点
   node* cur;
-  // 2. 维护一个指向 hashtable 的指针
+  // 指向当前 hashtable，用于在不同 bucket 进行切换时使用
   hashtable* ht;
 
+  // 构造函数1：提供元素指针和当前 hashtable，得到与之对应的迭代器
   __hashtable_iterator(node* n, hashtable* tab) : cur(n), ht(tab) {}
+  // 默认构造函数
   __hashtable_iterator() {}
-  // 1. 通过 node* 获取数据包
+  // 重载 * 操作符，获得当前迭代器所指元素数据的引用
   reference operator*() const { return cur->val; }
 #ifndef __SGI_STL_NO_ARROW_OPERATOR
+  // 重载 -> 操作符，获得当前迭代器所指元素的指针
   pointer operator->() const { return &(operator*()); }
 #endif /* __SGI_STL_NO_ARROW_OPERATOR */
   iterator& operator++();
   iterator operator++(int);
+  
+  // 下边两个函数重载 == 和 != 操作符，通过两个迭代器所指数据指针是否相同来判断是否为相同的迭代器 
   bool operator==(const iterator& it) const { return cur == it.cur; }
   bool operator!=(const iterator& it) const { return cur != it.cur; }
 };
 
-
+/* __hashtable_const_iterator 定义 */ 
+// 该定义主要是为了提供一个 const iterator，原理就是在 iterator 层次实现 const
 template <class Value, class Key, class HashFcn,
           class ExtractKey, class EqualKey, class Alloc>
 struct __hashtable_const_iterator {
   typedef hashtable<Value, Key, HashFcn, ExtractKey, EqualKey, Alloc>
           hashtable;
-  typedef __hashtable_iterator<Value, Key, HashFcn, 
+  typedef __hashtable_iterator<Value, Key, HashFcn,  
                                ExtractKey, EqualKey, Alloc>
           iterator;
   typedef __hashtable_const_iterator<Value, Key, HashFcn, 
@@ -123,6 +145,8 @@ struct __hashtable_const_iterator {
   typedef Value value_type;
   typedef ptrdiff_t difference_type;
   typedef size_t size_type;
+  // 和上述 __hashtable_iterator 的不同之处在于下边两处，通过添加 const 来定义常量引用和常量指针，这样在
+  // 返回元素是返回的就是常量类型的引用和指针，从而限制对数据进行修改操作。
   typedef const Value& reference;
   typedef const Value* pointer;
 
@@ -143,10 +167,11 @@ struct __hashtable_const_iterator {
   bool operator!=(const const_iterator& it) const { return cur != it.cur; }
 };
 
-// 1. 下方数组提供的是篮子大小，一般情况下选择质数作为篮子大小，通过两倍扩充，扩充之后选择距离最近的
-// 质数，当然篮子大小不会再编译阶段在算，而是直接被固定，可以直接使用
+// 下方数组提供的是篮子大小，一般情况下选择质数作为篮子大小，通常会按照两倍扩充，扩充之后选择距离最近的
+// 质数，当然篮子大小不会再编译阶段在算，而是直接被固定，可以直接使用。
 // Note: assumes long is at least 32 bits.
 static const int __stl_num_primes = 28;
+// 最后一个元素即为篮子的最大值
 static const unsigned long __stl_prime_list[__stl_num_primes] =
 {
   53,         97,           193,         389,       769,
@@ -157,6 +182,7 @@ static const unsigned long __stl_prime_list[__stl_num_primes] =
   1610612741, 3221225473ul, 4294967291ul
 };
 
+// 获取大于等于 n 的元素，如果 n 大于最大值，则就返回最大值
 inline unsigned long __stl_next_prime(unsigned long n)
 {
   const unsigned long* first = __stl_prime_list;
@@ -165,13 +191,7 @@ inline unsigned long __stl_next_prime(unsigned long n)
   return pos == last ? *(last - 1) : *pos;
 }
 
-// 1. hashtable 模板参数定义
-//      Value：数据包类型，包含 key 和 data
-//      Key：键值类型
-//      HashFcn：hash function 仿函数
-//      ExtracttKey：从数据包中提取 key 的仿函数
-//      EqualKey：判断两个 key 是否相同的仿函数
-//      Alloc：空间置配器
+/* hashtable 定义 */
 template <class Value, class Key, class HashFcn,
           class ExtractKey, class EqualKey,
           class Alloc>
@@ -189,26 +209,26 @@ public:
   typedef value_type&       reference;
   typedef const value_type& const_reference;
 
-  // 1. 获取 hash function 仿函数对象
+  // 获取 hash function 仿函数对象
   hasher hash_funct() const { return hash; }
-  // 1. 获取 key 比较仿函数对象
+  // 获取 key 比较仿函数对象
   key_equal key_eq() const { return equals; }
 
 private:
-  // 1. 维护一个 hash function 仿函数对象
+  // 维护一个 hash function 仿函数对象
   hasher hash;
-  // 1. 维护一个 key 比较仿函数对象
+  // 维护一个 key 比较仿函数对象
   key_equal equals;
-  // 1. 维护一个 获取 key 仿函数对象
+  // 维护一个 获取 key 仿函数对象
   ExtractKey get_key;
 
   typedef __hashtable_node<Value> node;
-  // 1. 设计一个专门用于分配 hashtable 节点的空间置配器
+  // 设计一个专门用于分配 hashtable 节点的空间置配器
   typedef simple_alloc<node, Alloc> node_allocator;
 
-  // 1. 篮子，每个元素保存的是一个 node*，维护了一个单链表，当然也可以使用其他实现方法
+  // 篮子，每个元素保存的是一个 node*，维护了一个单链表，保存的是 hash 值相同的元素
   vector<node*,Alloc> buckets;
-  // 1. 元素数量
+  // 元素数量
   size_type num_elements;
 
 public:
@@ -219,13 +239,15 @@ public:
   typedef __hashtable_const_iterator<Value, Key, HashFcn, ExtractKey, EqualKey,
                                      Alloc>
   const_iterator;
-
+ 
+  // 将迭代器设置为友元是因为迭代器中保存了 hashtable 指针，在重载 ++ 时使用了 ht.buckets
   friend struct
   __hashtable_iterator<Value, Key, HashFcn, ExtractKey, EqualKey, Alloc>;
   friend struct
   __hashtable_const_iterator<Value, Key, HashFcn, ExtractKey, EqualKey, Alloc>;
 
 public:
+  // ctor01：可以设置 buckets 个数、hash 仿函数、key 比较仿函数、key 提取仿函数
   hashtable(size_type n,
             const HashFcn&    hf,
             const EqualKey&   eql,
@@ -243,6 +265,7 @@ public:
     initialize_buckets(n);
   }
 
+  // 拷贝构造
   hashtable(const hashtable& ht)
     : hash(ht.hash), equals(ht.equals), get_key(ht.get_key), num_elements(0)
   {
@@ -272,7 +295,7 @@ public:
     __STD::swap(hash, ht.hash);
     __STD::swap(equals, ht.equals);
     __STD::swap(get_key, ht.get_key);
-    buckets.swap(ht.buckets);
+    buckets.swap(ht.buckets); a
     __STD::swap(num_elements, ht.num_elements);
   }
 
@@ -465,12 +488,16 @@ public:
   void clear();
 
 private:
+  /* 返回大于等于 n 的质数，当 n 大于最大最大值时，返回最大值 */
   size_type next_size(size_type n) const { return __stl_next_prime(n); }
 
+  /* 根据当前 n 初始化 buckets */
   void initialize_buckets(size_type n)
   {
     const size_type n_buckets = next_size(n);
+    // buckets 为默认大小0，reserve 重新设定 buckets 大小为 n_buckets，并拷贝原始空间内容，释放原空间
     buckets.reserve(n_buckets);
+    // 将 buckets 所有元素都设置为 0
     buckets.insert(buckets.end(), n_buckets, (node*) 0);
     num_elements = 0;
   }
@@ -519,7 +546,8 @@ private:
 
 };
 
-// 1. 迭代器的 ++ 操作
+/* 重载 ++ 操作符 */
+// 执行该操作可以使得当前迭代器指向下一个非空的节点
 template <class V, class K, class HF, class ExK, class EqK, class A>
 __hashtable_iterator<V, K, HF, ExK, EqK, A>&
 __hashtable_iterator<V, K, HF, ExK, EqK, A>::operator++()
@@ -527,13 +555,20 @@ __hashtable_iterator<V, K, HF, ExK, EqK, A>::operator++()
   const node* old = cur;
   cur = cur->next;
   if (!cur) {
+    // 如果当前迭代器所在 list 的下一个元素为空
+
+    // 获得当前迭代器所在 bucket
     size_type bucket = ht->bkt_num(old->val);
+    // 向后依次遍历所有 bucket，直到碰到不为零的 cur 或 bucket 超出范围
     while (!cur && ++bucket < ht->buckets.size())
       cur = ht->buckets[bucket];
   }
+  // 返回结果：下一个不为零的迭代器或者 end()
   return *this;
 }
 
+/* 后置 ++ 操作符重载 */
+// 标准流程：1）复制一个当前迭代器副本；2）对原始迭代器进行 ++；3）返回临时迭代器对象；
 template <class V, class K, class HF, class ExK, class EqK, class A>
 inline __hashtable_iterator<V, K, HF, ExK, EqK, A>
 __hashtable_iterator<V, K, HF, ExK, EqK, A>::operator++(int)
@@ -937,7 +972,7 @@ void hashtable<V, K, HF, Ex, Eq, A>::clear()
   num_elements = 0;
 }
 
-    
+// 拷贝
 template <class V, class K, class HF, class Ex, class Eq, class A>
 void hashtable<V, K, HF, Ex, Eq, A>::copy_from(const hashtable& ht)
 {

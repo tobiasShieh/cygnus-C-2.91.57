@@ -73,7 +73,7 @@ public:
   X& operator*() const __STL_NOTHROW { return *ptr; }
   X* operator->() const __STL_NOTHROW { return ptr; }
   X* get() const __STL_NOTHROW { return ptr; }
-  X* release const __STL_NOTHROW { owns = false; return ptr }
+  X* release const __STL_NOTHROW { owns = false; return ptr }mmmmmm mmmmmm   5tt
 };
 
 __STL_END_NAMESPACE
